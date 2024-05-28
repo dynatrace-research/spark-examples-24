@@ -1,5 +1,9 @@
 package com.dynatrace.spark.exercise;
 
+import static org.apache.spark.sql.functions.col;
+import static org.apache.spark.sql.functions.concat;
+import static org.apache.spark.sql.functions.lit;
+import static org.apache.spark.sql.functions.round;
 import static org.apache.spark.sql.functions.udf;
 
 import com.dynatrace.spark.operations.Animal;
@@ -7,6 +11,9 @@ import org.apache.hadoop.shaded.com.google.gson.Gson;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Encoders;
+import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.expressions.UserDefinedFunction;
 import org.apache.spark.sql.types.DataTypes;
@@ -40,12 +47,38 @@ public class Exercise9 {
 
     UserDefinedFunction colorGroup = udf(
         (String color) -> {
-          // TODO
-          return "colorful";
-        }
-        , DataTypes.StringType);
+          switch (color) {
+            case "white":
+            case "gray":
+            case "black":
+              return "monochrome";
+            case "red":
+            case "blue":
+            case "green":
+            case "yellow":
+              return "primary color";
+            default:
+              return "colorful";
+          }
+        }, DataTypes.StringType);
 
-    // TODO
+    Dataset<Row> animals = sparkSession.createDataset(rdd.rdd(), Encoders.bean(Animal.class))
+        .withColumn(COLOR_GROUP, colorGroup.apply(col(COLOR)));
+
+    Dataset<Row> colorGroupCount = animals
+        .groupBy(SPECIES, COLOR_GROUP)
+        .count().withColumnRenamed(COUNT, "c1");
+
+    Dataset<Row> speciesCount = animals.groupBy(SPECIES).count().withColumnRenamed(COUNT, "c2");
+
+    colorGroupCount
+        .join(speciesCount, SPECIES)
+        .withColumn(PERCENTAGE, round(col("c1").multiply(100).divide(col("c2")), 1))
+        .sort(col(SPECIES), col(PERCENTAGE).desc())
+        .withColumn(PERCENTAGE, concat(col(PERCENTAGE), lit("%")))
+        .withColumn(NUMBER, concat(col("c1"), lit("/"), col("c2")))
+        .select(SPECIES, COLOR_GROUP, NUMBER, PERCENTAGE)
+        .show();
   }
 
 }

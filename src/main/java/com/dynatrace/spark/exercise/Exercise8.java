@@ -4,8 +4,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Encoder;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.TypedColumn;
+import org.apache.spark.sql.expressions.Aggregator;
 
 public class Exercise8 {
 
@@ -46,6 +49,73 @@ public class Exercise8 {
   }
 
   /**
+   * Format for the final output
+   */
+  public static class WordsInLine {
+    private int lineNumber;
+    private String firstWord;
+
+    public WordsInLine() {
+    }
+
+    public WordsInLine(int lineNumber, String firstWord) {
+      this.lineNumber = lineNumber;
+      this.firstWord = firstWord;
+    }
+
+    public int getLineNumber() {
+      return lineNumber;
+    }
+
+    public void setLineNumber(int lineNumber) {
+      this.lineNumber = lineNumber;
+    }
+
+    public String getFirstWord() {
+      return firstWord;
+    }
+
+    public void setFirstWord(String firstWord) {
+      this.firstWord = firstWord;
+    }
+  }
+
+  /**
+   * Aggregation operation to find the line with most words
+   */
+  public static class MostWordsAggregator extends Aggregator<LineSummary, LineSummary, WordsInLine> {
+    @Override
+    public LineSummary zero() {
+      return new LineSummary();
+    }
+
+    @Override
+    public LineSummary reduce(LineSummary a, LineSummary b) {
+      return a.getWordCount() > b.getWordCount() ? a : b;
+    }
+
+    @Override
+    public LineSummary merge(LineSummary a, LineSummary b) {
+      return a.getWordCount() > b.getWordCount() ? a : b;
+    }
+
+    @Override
+    public WordsInLine finish(LineSummary reduction) {
+      return new WordsInLine(reduction.lineNumber, reduction.firstWord);
+    }
+
+    @Override
+    public Encoder<LineSummary> bufferEncoder() {
+      return Encoders.bean(LineSummary.class);
+    }
+
+    @Override
+    public Encoder<WordsInLine> outputEncoder() {
+      return Encoders.bean(WordsInLine.class);
+    }
+  }
+
+  /**
    * Read a document and find the line with the most words
    */
   public static void main(String[] args) {
@@ -67,12 +137,20 @@ public class Exercise8 {
         .map(
             (MapFunction<String, LineSummary>)
                 line -> {
-                  // TODO
-                  return new LineSummary();
+                  LineSummary summary = new LineSummary();
+                  summary.setLineNumber(lineNumber.getAndIncrement());
+                  String[] words = line.split(" ");
+                  summary.setWordCount(words.length);
+                  summary.setFirstWord(words[0].toLowerCase());
+                  return summary;
                 }, Encoders.bean(LineSummary.class));
 
     // FIND LINE WITH MOST WORDS
-    // TODO
+
+    MostWordsAggregator mostWords = new MostWordsAggregator();
+    TypedColumn<LineSummary, WordsInLine> line = mostWords.toColumn();
+    Dataset<WordsInLine> result = summaries.select(line);
+    result.show();
   }
 
 }
